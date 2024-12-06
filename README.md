@@ -22,10 +22,9 @@ Prequisities
 - Your client secret is the values after "Secret"
 - Your user agent will just be "Script for [Your User}"
 
-# Inquiries
-- Contact me via email at `starlover@starlover.online` for any issues
+## Issues
+Contact me via <a href="mailto:support@starlover.online">support@starlover.online</a> in a case of any issues with an image and explanation
 
-# Note
-- It is capped at 100 downloads per minute to comply with reddit API rules.
+Note: It is capped at 100 downloads per minute to comply with reddit API rules.
 
 
