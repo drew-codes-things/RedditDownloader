@@ -1,51 +1,29 @@
-# Instagram Non-Followers Checker
+# Reddit Downloader
 
-## Prerequisites
+## Prequisities 
 - Requires Python 3.6.x+ (Recommended 3.8.x+)
-- Instagram account
-- Instagram data export (JSON format)
-
-No APIs, logins, or third-party modules required.
-
----
+- Reddit APP
+- Praw and requests modules
 
 ## How to use
-1. Request your Instagram data (Followers & Following)
-2. Download and extract the ZIP file
-3. Place `followers_1.json` and `following.json` in the script directory
-4. Open CMD / Terminal
-5. Point to the directory of the script
-6. Run the script by typing  
-   `python main.py` or `py main.py`
+1. Input the correct values in App.txt
+2. Open CMD
+3. Point to the dir of the script
+4. Type `pip install -r requirements.txt`
+5. Run the python file by typing `python main.py` or  `py main.py`
 
----
-
-## How to get your Instagram data
-1. Open **Instagram**
-2. Go to **Settings**
-3. Open **Accounts Centre**
-4. Select **Your information and permissions**
-5. Click **Download your information**
-6. Choose **Followers and Following**
-7. Select **JSON** format
-8. Submit request and wait for the download email
-9. Extract the files
-
----
-
-## Output
-- Displays a list of users you follow who **do not follow you back**
-- Uses **current data only**
-- Does **not** track unfollows or past data
-
----
+## How to get a Reddit app
+1. Navigate to [Reddit apps](https://www.reddit.com/prefs/apps)
+2. Login 
+3. Click "Are you a developer? create an app"
+4. Use the script option to create the app
+5. Choose a name and make the redirect url `https://reddit.com`
+- Your client id is the values under "personal use script"
+- Your client secret is the values after "Secret"
+- Your user agent will just be "Script for [Your User}"
 
 ## Issues
-If you encounter any issues, please try to gather the following information before reaching out:
--   A screenshot or screen recording of the problem.
--   Any errors shown in the browser's developer console (Press F12 → Console tab).
--   A clear, step-by-step explanation of what you did and what went wrong.
+Contact me via <a href="mailto:support@starlover.online">support@starlover.online</a> in a case of any issues with an image and explanation
 
----
+Note: It is capped at 100 downloads per minute to comply with reddit API rules.
 
-Note: This script does **not** interact with Instagram directly and does **not** violate API limits or rate caps.
