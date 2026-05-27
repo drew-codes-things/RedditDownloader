@@ -5,13 +5,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 HEADERS = {'User-Agent': 'RedditDownloader/2.0 by Drew'}
 
-
 def get_downloads_folder(content_type):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     folder = os.path.join(script_dir, 'Reddit_downloads', content_type.capitalize())
     os.makedirs(folder, exist_ok=True)
     return folder
-
 
 def download_file(url, filename, download_folder):
     try:
@@ -27,7 +25,6 @@ def download_file(url, filename, download_folder):
         print(f"Failed {filename}: {e}")
         return False
 
-
 def save_text(text, filename, download_folder):
     try:
         file_path = os.path.join(download_folder, filename)
@@ -38,7 +35,6 @@ def save_text(text, filename, download_folder):
     except IOError as e:
         print(f"Failed to save {filename}: {e}")
         return False
-
 
 def fetch_posts(subreddit_name, limit, flair=None):
     """Fetch posts using Reddit's public JSON API — no credentials needed."""
@@ -78,7 +74,6 @@ def fetch_posts(subreddit_name, limit, flair=None):
 
     return posts
 
-
 def search_subreddits(query):
     """Search subreddits using the public JSON API."""
     url = f"https://www.reddit.com/subreddits/search.json?q={requests.utils.quote(query)}&limit=10"
@@ -91,13 +86,11 @@ def search_subreddits(query):
         print(f"Error searching subreddits: {e}")
         return []
 
-
 def get_available_flairs(subreddit_name):
     """Scan hot posts to collect flair names."""
     posts = fetch_posts(subreddit_name, limit=100)
     flairs = sorted({p['link_flair_text'] for p in posts if p.get('link_flair_text')})
     return flairs
-
 
 def scrape_reddit(subreddit_name, count, num_threads, download_type, flair=None):
     print(f"\nFetching up to {count} posts from r/{subreddit_name}...")
@@ -110,14 +103,12 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, flair=None)
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = []
         for post in posts:
-            # Media
             if download_type in ['media', 'both']:
                 url = post.get('url', '')
                 if url.lower().endswith(media_exts):
                     filename = os.path.basename(url.split('?')[0])
                     folder = get_downloads_folder('Media')
                     futures.append(executor.submit(download_file, url, filename, folder))
-                # Reddit-hosted video
                 reddit_video = post.get('media') or {}
                 rv = (reddit_video.get('reddit_video') or {})
                 if rv.get('fallback_url'):
@@ -125,7 +116,6 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, flair=None)
                     folder = get_downloads_folder('Media')
                     futures.append(executor.submit(download_file, rv['fallback_url'], filename, folder))
 
-            # Text
             if download_type in ['text', 'both'] and post.get('selftext', '').strip():
                 filename = f"{post['id']}_text.txt"
                 folder = get_downloads_folder('Text')
@@ -141,7 +131,6 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, flair=None)
 
     print(f"\nDone. {total_downloads} files saved.")
 
-
 def print_title():
     title = r"""
  ____           _     _ _ _     ____                      _                 _           
@@ -153,7 +142,6 @@ def print_title():
                         - made by Drew  (v2 — no API key needed)
     """
     print(title)
-
 
 def main():
     print_title()
@@ -206,7 +194,6 @@ def main():
             flair = flairs[int(fc) - 1]
 
     scrape_reddit(subreddit_name, count, num_threads, download_type, flair)
-
 
 if __name__ == '__main__':
     main()
