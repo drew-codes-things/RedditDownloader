@@ -1,4 +1,4 @@
-# RedditDownloader
+# RedditDownloader V2
 
 Download media and text posts from any subreddit — **no Reddit app registration required**.
 
