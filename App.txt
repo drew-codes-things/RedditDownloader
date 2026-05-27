@@ -1,4 +1,0 @@
-# App.txt is no longer needed in v2.
-# RedditDownloader now uses Reddit's public JSON API directly.
-# No client_id, client_secret, or user_agent registration required.
-# You can delete this file.
