@@ -1,140 +1,146 @@
-import praw
 import requests
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from praw.exceptions import RedditAPIException, ClientException, PRAWException
 
-def read_api_credentials():
-    try:
-        with open('App.txt', 'r') as file:
-            lines = file.readlines()
-            if len(lines) < 3:
-                raise ValueError("App.txt should contain at least 3 lines")
-            return {
-                'client_id': lines[0].strip(),
-                'client_secret': lines[1].strip(),
-                'user_agent': lines[2].strip()
-            }
-    except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {str(e)}")
-        exit(1)
+HEADERS = {'User-Agent': 'RedditDownloader/2.0 by Drew'}
 
-def get_reddit_instance():
-    credentials = read_api_credentials()
-    try:
-        return praw.Reddit(
-            client_id=credentials['client_id'],
-            client_secret=credentials['client_secret'],
-            user_agent=credentials['user_agent']
-        )
-    except (ClientException, PRAWException) as e:
-        print(f"Error creating Reddit instance: {str(e)}")
-        exit(1)
 
 def get_downloads_folder(content_type):
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        base_folder = os.path.join(script_dir, 'Reddit_downloads')
-        content_folder = os.path.join(base_folder, content_type.capitalize())
-        os.makedirs(content_folder, exist_ok=True)
-        return content_folder
-    except Exception as e:
-        print(f"Error creating download folders: {str(e)}")
-        exit(1)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    folder = os.path.join(script_dir, 'Reddit_downloads', content_type.capitalize())
+    os.makedirs(folder, exist_ok=True)
+    return folder
+
 
 def download_file(url, filename, download_folder):
     try:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, headers=HEADERS, timeout=30)
         response.raise_for_status()
         file_path = os.path.join(download_folder, filename)
-        with open(file_path, 'wb') as file:
+        with open(file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
-        print(f"Downloaded {filename} to {file_path}")
+                f.write(chunk)
+        print(f"Downloaded: {filename}")
         return True
     except requests.RequestException as e:
-        print(f"Error downloading file {filename}: {str(e)}")
+        print(f"Failed {filename}: {e}")
         return False
 
-def save_text(selftext, filename, download_folder):
+
+def save_text(text, filename, download_folder):
     try:
         file_path = os.path.join(download_folder, filename)
-        with open(file_path, 'w', encoding='utf-8') as file:
-            file.write(selftext)
-        print(f"Saved text post to {file_path}")
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        print(f"Saved text: {filename}")
         return True
     except IOError as e:
-        print(f"Error saving text file {filename}: {str(e)}")
+        print(f"Failed to save {filename}: {e}")
         return False
 
-def get_available_flairs(subreddit):
+
+def fetch_posts(subreddit_name, limit, flair=None):
+    """Fetch posts using Reddit's public JSON API — no credentials needed."""
+    posts = []
+    after = None
+    fetched = 0
+
+    while fetched < limit:
+        batch = min(100, limit - fetched)
+        url = f"https://www.reddit.com/r/{subreddit_name}/hot.json?limit={batch}"
+        if after:
+            url += f"&after={after}"
+
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            if resp.status_code == 429:
+                print("Rate limited — waiting 60 seconds...")
+                time.sleep(60)
+                continue
+            resp.raise_for_status()
+            data = resp.json().get('data', {})
+            children = data.get('children', [])
+            if not children:
+                break
+            for child in children:
+                post = child.get('data', {})
+                if flair and post.get('link_flair_text') != flair:
+                    continue
+                posts.append(post)
+            after = data.get('after')
+            fetched += len(children)
+            if not after:
+                break
+        except requests.RequestException as e:
+            print(f"Error fetching posts: {e}")
+            break
+
+    return posts
+
+
+def search_subreddits(query):
+    """Search subreddits using the public JSON API."""
+    url = f"https://www.reddit.com/subreddits/search.json?q={requests.utils.quote(query)}&limit=10"
     try:
-        flairs = set()
-        for submission in subreddit.hot(limit=100):
-            if submission.link_flair_text:
-                flairs.add(submission.link_flair_text)
-        return list(flairs)
-    except RedditAPIException as e:
-        print(f"Error fetching flairs: {str(e)}")
+        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        children = resp.json().get('data', {}).get('children', [])
+        return [c['data'] for c in children]
+    except requests.RequestException as e:
+        print(f"Error searching subreddits: {e}")
         return []
 
-def countdown_timer(seconds):
-    for remaining in range(seconds, 0, -1):
-        print(f"\rCooldown: {remaining} seconds remaining", end='', flush=True)
-        time.sleep(1)
-    print("\rCooldown complete. Resuming downloads...                ")
+
+def get_available_flairs(subreddit_name):
+    """Scan hot posts to collect flair names."""
+    posts = fetch_posts(subreddit_name, limit=100)
+    flairs = sorted({p['link_flair_text'] for p in posts if p.get('link_flair_text')})
+    return flairs
+
 
 def scrape_reddit(subreddit_name, count, num_threads, download_type, flair=None):
-    reddit = get_reddit_instance()
-    try:
-        subreddit = reddit.subreddit(subreddit_name)
-        posts = list(subreddit.hot(limit=count))
-        posts = [submission for submission in posts if (not flair or submission.link_flair_text == flair)]
-    except RedditAPIException as e:
-        print(f"Error accessing subreddit {subreddit_name}: {str(e)}")
-        return
+    print(f"\nFetching up to {count} posts from r/{subreddit_name}...")
+    posts = fetch_posts(subreddit_name, count, flair)
+    print(f"Retrieved {len(posts)} posts.")
 
     total_downloads = 0
-    total_processed = 0
-    batch_size = 100
-    for i in range(0, len(posts), batch_size):
-        batch = posts[i:i+batch_size]
-        batch_downloads = 0
-        
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = []
-            for submission in batch:
-                if download_type in ['media', 'both'] and hasattr(submission, 'url') and submission.url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.mp4')):
-                    media_name = os.path.basename(submission.url)
-                    media_folder = get_downloads_folder('Media')
-                    futures.append(executor.submit(download_file, submission.url, media_name, media_folder))
-                
-                if download_type in ['text', 'both'] and submission.selftext:
-                    text_filename = f"{submission.id}_text.txt"
-                    text_folder = get_downloads_folder('Text')
-                    futures.append(executor.submit(save_text, submission.selftext, text_filename, text_folder))
+    media_exts = ('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.gifv', '.webp')
 
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result:
-                        batch_downloads += 1
-                except Exception as e:
-                    print(f"Error in future task: {str(e)}")
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = []
+        for post in posts:
+            # Media
+            if download_type in ['media', 'both']:
+                url = post.get('url', '')
+                if url.lower().endswith(media_exts):
+                    filename = os.path.basename(url.split('?')[0])
+                    folder = get_downloads_folder('Media')
+                    futures.append(executor.submit(download_file, url, filename, folder))
+                # Reddit-hosted video
+                reddit_video = post.get('media') or {}
+                rv = (reddit_video.get('reddit_video') or {})
+                if rv.get('fallback_url'):
+                    filename = f"{post['id']}.mp4"
+                    folder = get_downloads_folder('Media')
+                    futures.append(executor.submit(download_file, rv['fallback_url'], filename, folder))
 
-        total_downloads += batch_downloads
-        total_processed += len(batch)
-        print(f"\nProcessed {len(batch)} posts in this batch.")
-        print(f"Completed {batch_downloads} downloads in this batch. Total downloads: {total_downloads}")
-        print(f"Total posts processed: {total_processed}")
-        
-        if total_processed < count and total_processed % batch_size == 0:
-            print(f"Starting cooldown...")
-            countdown_timer(60)
+            # Text
+            if download_type in ['text', 'both'] and post.get('selftext', '').strip():
+                filename = f"{post['id']}_text.txt"
+                folder = get_downloads_folder('Text')
+                content = f"Title: {post.get('title', '')}\n\n{post['selftext']}"
+                futures.append(executor.submit(save_text, content, filename, folder))
 
-    print(f"\nAll posts processed. Total posts: {total_processed}")
-    print(f"Total successful downloads: {total_downloads}")
+        for future in as_completed(futures):
+            try:
+                if future.result():
+                    total_downloads += 1
+            except Exception as e:
+                print(f"Task error: {e}")
+
+    print(f"\nDone. {total_downloads} files saved.")
+
 
 def print_title():
     title = r"""
@@ -144,71 +150,63 @@ def print_title():
 |  _ < (_) | (_| | (_| | | |_  | |_| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |   
 |_| \_\___/ \__,_|\__,_|_|\__| |____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_|   
                                                                                         
-                        - made by Drew
+                        - made by Drew  (v2 — no API key needed)
     """
     print(title)
 
-def search_subreddits(query):
-    reddit = get_reddit_instance()
-    try:
-        return list(reddit.subreddits.search(query, limit=10))
-    except RedditAPIException as e:
-        print(f"Error searching subreddits: {str(e)}")
-        return []
 
 def main():
     print_title()
-    
-    search_query = input("Enter a search query for subreddits: ")
-    matching_subreddits = search_subreddits(search_query)
-    
-    if not matching_subreddits:
+
+    search_query = input("Search for a subreddit: ").strip()
+    results = search_subreddits(search_query)
+
+    if not results:
         print("No matching subreddits found.")
         return
 
-    print("Top matching subreddits:")
-    for i, subreddit in enumerate(matching_subreddits, 1):
-        print(f"{i}. r/{subreddit.display_name} - {subreddit.title}")
+    print("\nTop results:")
+    for i, sub in enumerate(results, 1):
+        print(f"  {i}. r/{sub['display_name']} — {sub.get('title', '')}")
 
-    choice = int(input("Enter the number of the subreddit you want to download from: "))
-    if choice < 1 or choice > len(matching_subreddits):
+    try:
+        choice = int(input("\nPick a number: "))
+        if not (1 <= choice <= len(results)):
+            print("Invalid choice.")
+            return
+    except ValueError:
+        print("Please enter a number.")
+        return
+
+    subreddit_name = results[choice - 1]['display_name']
+
+    download_type = input("Download [M]edia, [T]ext or [B]oth? ").strip().lower()
+    if download_type not in ['m', 't', 'b']:
         print("Invalid choice.")
         return
+    download_type = {'m': 'media', 't': 'text', 'b': 'both'}[download_type]
 
-    selected_subreddit = matching_subreddits[choice - 1]
-    subreddit_name = selected_subreddit.display_name
-
-    download_type = input("What do you want to download? ([M]edia [T]ext [B]oth): ").lower()
-    if download_type not in ['m', 't', 'b']:
-        print("Invalid choice for download type.")
+    try:
+        count = int(input("How many posts? "))
+        num_threads = int(input("Concurrent downloads: "))
+        if count <= 0 or num_threads <= 0:
+            raise ValueError
+    except ValueError:
+        print("Please enter positive integers.")
         return
 
-    count = int(input("Enter the number of posts to process: "))
-    num_threads = int(input("Enter the number of concurrent downloads: "))
-
-    if count <= 0 or num_threads <= 0:
-        print("The number of posts and concurrent downloads must be positive integers.")
-        return
-
-    if download_type == 'm':
-        download_type = 'media'
-    elif download_type == 't':
-        download_type = 'text'
-    elif download_type == 'b':
-        download_type = 'both'
-
-    available_flairs = get_available_flairs(selected_subreddit)
-
+    flairs = get_available_flairs(subreddit_name)
     flair = None
-    if available_flairs:
-        print("Available flairs:")
-        for i, flair_text in enumerate(available_flairs, 1):
-            print(f"{i}. {flair_text}")
-        flair_choice = input("Enter the number of the flair you want to filter from (Leave blank for all): ")
-        if flair_choice.isdigit() and 1 <= int(flair_choice) <= len(available_flairs):
-            flair = available_flairs[int(flair_choice) - 1]
+    if flairs:
+        print("\nAvailable flairs:")
+        for i, f in enumerate(flairs, 1):
+            print(f"  {i}. {f}")
+        fc = input("Filter by flair number (leave blank for all): ").strip()
+        if fc.isdigit() and 1 <= int(fc) <= len(flairs):
+            flair = flairs[int(fc) - 1]
 
     scrape_reddit(subreddit_name, count, num_threads, download_type, flair)
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
