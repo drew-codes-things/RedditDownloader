@@ -4,13 +4,14 @@ A powerful Python-based Reddit media downloader that fetches images, videos, and
 
 ## What it does
 
-Downloads media (images, videos, GIFs) and/or text posts from subreddits in bulk, with support for flair filtering, concurrent downloads, and organized folder output.
+Downloads media (images, videos, GIFs) and/or text posts from subreddits in bulk, with support for flair filtering, concurrent downloads, and organised folder output.
 
 ## Key Technical Features
 
-- Uses Reddit's **public JSON API** (`/hot.json`) — no credentials or API key needed
+- Uses Reddit's **public JSON API** (`/hot.json`) - no credentials or API key needed
 - Multi-threaded downloading with `ThreadPoolExecutor`
 - Automatic rate-limit handling (waits 60s on 429)
+- Resume support - already downloaded files are skipped on re-run
 - Flair filtering (scans first 100 posts to list available flairs)
 - Smart media detection (jpg, jpeg, png, gif, mp4, gifv, webp + Reddit video fallback)
 - Separate folders for Media and Text downloads
@@ -20,11 +21,11 @@ Downloads media (images, videos, GIFs) and/or text posts from subreddits in bulk
 
 ```
 RedditDownloaderV2/
-├── main.py              # Full application logic (entry point)
-├── requirements.txt
-├── .env.example         # (optional) for future authenticated features
-├── config.py            # Default settings (download limit, NSFW, output dir)
-└── LICENSE
+    main.py              # Full application logic (entry point)
+    requirements.txt
+    .env.example         # (optional) for future authenticated features
+    config.py            # Default settings (download limit, NSFW, output dir)
+    LICENSE
 ```
 
 ## Installation
@@ -65,7 +66,7 @@ The script will:
 
 ## Technical Details
 
-- **No authentication required** — uses public unauthenticated endpoints
+- **No authentication required** - uses public unauthenticated endpoints
 - **Headers**: Custom User-Agent (`RedditDownloader/2.0 by Drew`)
 - **Concurrency**: User-defined thread count
 - **Output**: `Reddit_downloads/Media/` and `Reddit_downloads/Text/`
