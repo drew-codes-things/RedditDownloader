@@ -27,19 +27,30 @@ RedditDownloaderV2/
 └── LICENSE
 ```
 
-## Main Functions (main.py)
+## Installation (Recommended: Virtual Environment)
 
-- `fetch_posts()` — Paginates through Reddit hot posts using `after` token
-- `scrape_reddit()` — Orchestrates downloads with thread pool
-- `download_file()` — Streams large files in chunks
-- `get_available_flairs()` — Scans subreddit for flair options
-- `search_subreddits()` — Searches Reddit for matching subreddits
-
-## Installation
+### On Linux / macOS
 
 ```bash
 git clone https://github.com/drew-codes-things/RedditDownloaderV2.git
 cd RedditDownloaderV2
+
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+### On Windows
+
+```bash
+git clone https://github.com/drew-codes-things/RedditDownloaderV2.git
+cd RedditDownloaderV2
+
+python -m venv venv
+venv\Scripts\activate
+
 pip install -r requirements.txt
 ```
 
