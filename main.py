@@ -66,7 +66,7 @@ def save_text(post, filename, download_folder):
 
 
 def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
-    """Fetch posts using Reddit's public JSON API — no credentials needed."""
+    """Fetch posts using Reddit's public JSON API - no credentials needed."""
     valid_sorts = ('hot', 'new', 'top', 'rising')
     if sort not in valid_sorts:
         sort = 'hot'
@@ -84,7 +84,7 @@ def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
         try:
             resp = requests.get(url, headers=HEADERS, timeout=15)
             if resp.status_code == 429:
-                print("Rate limited — waiting 60 seconds...")
+                print("Rate limited - waiting 60 seconds...")
                 time.sleep(60)
                 continue
             resp.raise_for_status()
@@ -121,11 +121,40 @@ def search_subreddits(query):
         return []
 
 
-def get_available_flairs(subreddit_name):
-    """Scan hot posts to collect flair names."""
-    posts = fetch_posts(subreddit_name, limit=100)
+def get_available_flairs(subreddit_name, scan_limit):
+    """Scan hot posts to collect flair names, using the same limit the user asked for."""
+    scan = max(scan_limit, 25)  # always scan at least 25 so low counts still find flairs
+    posts = fetch_posts(subreddit_name, limit=scan)
     flairs = sorted({p['link_flair_text'] for p in posts if p.get('link_flair_text')})
     return flairs
+
+
+def extract_gallery_images(post):
+    """
+    For gallery posts (is_gallery=True), return a list of the best-quality
+    image URLs from media_metadata in gallery order.
+    """
+    if not post.get('is_gallery'):
+        return []
+    media_metadata = post.get('media_metadata') or {}
+    gallery_data   = post.get('gallery_data') or {}
+    urls = []
+    for item in gallery_data.get('items', []):
+        media_id = item.get('media_id')
+        if not media_id or media_id not in media_metadata:
+            continue
+        meta   = media_metadata[media_id]
+        if meta.get('status') != 'valid':
+            continue
+        # prefer largest preview; fall back to source
+        previews = meta.get('p', [])
+        if previews:
+            best = previews[-1].get('u', '')
+        else:
+            best = (meta.get('s') or {}).get('u', '')
+        if best:
+            urls.append(best.replace('&amp;', '&'))
+    return urls
 
 
 def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot', flair=None):
@@ -141,20 +170,29 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot',
         futures = []
         for post in posts:
             if download_type in ['media', 'both']:
-                url = post.get('url', '')
-                if url.lower().endswith(media_exts):
-                    filename = os.path.basename(url.split('?')[0])
-                    # Normalise gifv filename extension
-                    if filename.lower().endswith('.gifv'):
-                        filename = filename[:-5] + '.mp4'
+                # --- gallery posts ---
+                gallery_urls = extract_gallery_images(post)
+                if gallery_urls:
                     folder = get_downloads_folder('Media')
-                    futures.append(executor.submit(download_file, url, filename, folder))
-                reddit_video = post.get('media') or {}
-                rv = (reddit_video.get('reddit_video') or {})
-                if rv.get('fallback_url'):
-                    filename = f"{post['id']}.mp4"
-                    folder = get_downloads_folder('Media')
-                    futures.append(executor.submit(download_file, rv['fallback_url'], filename, folder))
+                    for idx, gurl in enumerate(gallery_urls, 1):
+                        ext  = os.path.splitext(gurl.split('?')[0])[1] or '.jpg'
+                        fname = f"{post['id']}_gallery_{idx:03d}{ext}"
+                        futures.append(executor.submit(download_file, gurl, fname, folder))
+                else:
+                    # --- direct image / video ---
+                    url = post.get('url', '')
+                    if url.lower().endswith(media_exts):
+                        filename = os.path.basename(url.split('?')[0])
+                        if filename.lower().endswith('.gifv'):
+                            filename = filename[:-5] + '.mp4'
+                        folder = get_downloads_folder('Media')
+                        futures.append(executor.submit(download_file, url, filename, folder))
+                    reddit_video = post.get('media') or {}
+                    rv = (reddit_video.get('reddit_video') or {})
+                    if rv.get('fallback_url'):
+                        filename = f"{post['id']}.mp4"
+                        folder = get_downloads_folder('Media')
+                        futures.append(executor.submit(download_file, rv['fallback_url'], filename, folder))
 
             if download_type in ['text', 'both'] and post.get('selftext', '').strip():
                 filename = f"{post['id']}_text.txt"
@@ -184,7 +222,7 @@ def print_title():
 |  _ < (_) | (_| | (_| | | |_  | |_| | (_) \ V  V /| | | | | (_) | (_| | (_| |  __/ |   
 |_| \_\___/ \__,_|\__,_|_|\__| |____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|\___|_|   
                                                                                         
-                        - made by Drew  (v2 — no API key needed)
+                        - made by Drew  (v2 - no API key needed)
     """
     print(title)
 
@@ -201,7 +239,7 @@ def main():
 
     print("\nTop results:")
     for i, sub in enumerate(results, 1):
-        print(f"  {i}. r/{sub['display_name']} — {sub.get('title', '')}")
+        print(f"  {i}. r/{sub['display_name']} - {sub.get('title', '')}")
 
     try:
         choice = int(input("\nPick a number: "))
@@ -243,7 +281,7 @@ def main():
         raw_threads = MAX_THREADS
     num_threads = raw_threads
 
-    flairs = get_available_flairs(subreddit_name)
+    flairs = get_available_flairs(subreddit_name, count)
     flair = None
     if flairs:
         print("\nAvailable flairs:")
