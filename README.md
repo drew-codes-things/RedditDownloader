@@ -1,21 +1,39 @@
-# RedditDownloader V2
+# RedditDownloaderV2
 
-Download media and text posts from any subreddit — **no Reddit app registration required**.
+A powerful Python-based Reddit media downloader that fetches images and videos from any subreddit of your choice using the official Reddit API.
 
-Version 2 ditches PRAW and the old `App.txt` credentials entirely. It talks directly to Reddit's public JSON API (`reddit.com/r/{sub}/hot.json`), so you can clone and run immediately with zero setup.
+## Features
 
----
+- Download images and videos from subreddits
+- Supports hot, new, top, and rising sorting
+- Automatic handling of NSFW content (with toggle)
+- Progress tracking and error handling
+- Saves files with clean naming (including post title and ID)
+- Configurable download limits and filters
 
 ## Requirements
 
 - Python 3.8+
-- `requests` (the only dependency)
+- Reddit API credentials (free)
 
-```bash
-pip install requests
-```
+## Installation
 
----
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/drew-codes-things/RedditDownloaderV2.git
+   cd RedditDownloaderV2
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Set up your Reddit API credentials:
+   - Go to https://www.reddit.com/prefs/apps
+   - Create a new "script" app
+   - Copy your `client_id`, `client_secret`, and `user_agent`
+   - Create a `.env` file (see `.env.example`)
 
 ## Usage
 
@@ -23,41 +41,20 @@ pip install requests
 python main.py
 ```
 
-You'll be prompted to:
+Follow the prompts to choose a subreddit, sorting method, and number of posts to download.
 
-1. **Search** for a subreddit by name or topic
-2. **Pick** from the top 10 matching results
-3. **Choose** what to download — Media, Text, or Both
-4. **Set** how many posts to grab and how many parallel downloads to run
-5. **Optionally filter** by post flair
+## Configuration
 
-Files are saved to `Reddit_downloads/Media/` and `Reddit_downloads/Text/` next to the script.
-
----
-
-## What gets downloaded
-
-| Type | What it saves |
-|------|---------------|
-| Media | Direct image/gif/mp4 links (`.jpg`, `.jpeg`, `.png`, `.gif`, `.mp4`, `.gifv`, `.webp`) and Reddit-hosted videos |
-| Text | Self-post body saved as `{post_id}_text.txt`, with the title prepended |
-
-> **Note:** Reddit only exposes direct media URLs in the post metadata. Embedded galleries and external video hosts (YouTube, Imgur albums, etc.) are not downloaded.
-
----
-
-## Rate limiting
-
-Reddit's public API allows roughly 60 requests per minute without authentication. If you hit the limit the script automatically waits 60 seconds and resumes — you don't need to do anything.
-
----
-
-## Why no PRAW / no App.txt?
-
-Reddit made registering a developer app increasingly awkward. This version uses the same public endpoints any browser hits when you add `.json` to a Reddit URL — no OAuth, no client ID, no secret.
-
----
+Edit `config.py` or use environment variables for:
+- Default subreddit
+- Download limit
+- NSFW filter
+- Output directory
 
 ## License
 
-MIT
+MIT License
+
+---
+
+*Originally created to make bulk downloading from Reddit simple and reliable.*
