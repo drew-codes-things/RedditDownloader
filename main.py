@@ -66,7 +66,13 @@ def save_text(post, filename, download_folder):
 
 
 def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
-    """Fetch posts using Reddit's public JSON API - no credentials needed."""
+    """Fetch posts using Reddit's public JSON API - no credentials needed.
+
+    When a flair filter is active, `fetched` tracks only the posts that
+    actually passed the filter, not the raw children count returned by the
+    API.  Previously, fetched counted every child (including flair-mismatches)
+    so the loop exited before collecting `limit` matching posts.
+    """
     valid_sorts = ('hot', 'new', 'top', 'rising')
     if sort not in valid_sorts:
         sort = 'hot'
@@ -97,8 +103,12 @@ def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
                 if flair and post.get('link_flair_text') != flair:
                     continue
                 posts.append(post)
+                # Only count posts that passed the flair filter so that the
+                # loop keeps paginating until `limit` matching posts are found.
+                fetched += 1
+                if fetched >= limit:
+                    break
             after = data.get('after')
-            fetched += len(children)
             if not after:
                 break
         except requests.RequestException as e:
@@ -179,14 +189,19 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot',
                         fname = f"{post['id']}_gallery_{idx:03d}{ext}"
                         futures.append(executor.submit(download_file, gurl, fname, folder))
                 else:
-                    # --- direct image / video ---
+                    # --- direct image ---
+                    # Prefix filename with the post ID so that two different
+                    # posts linking the same CDN filename (e.g. abc123.jpg on
+                    # Imgur) don't silently overwrite each other.
                     url = post.get('url', '')
                     if url.lower().endswith(media_exts):
-                        filename = os.path.basename(url.split('?')[0])
-                        if filename.lower().endswith('.gifv'):
-                            filename = filename[:-5] + '.mp4'
+                        raw_name = os.path.basename(url.split('?')[0])
+                        if raw_name.lower().endswith('.gifv'):
+                            raw_name = raw_name[:-5] + '.mp4'
+                        filename = f"{post['id']}_{raw_name}"
                         folder = get_downloads_folder('Media')
                         futures.append(executor.submit(download_file, url, filename, folder))
+                    # --- reddit-hosted video ---
                     reddit_video = post.get('media') or {}
                     rv = (reddit_video.get('reddit_video') or {})
                     if rv.get('fallback_url'):
