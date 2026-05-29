@@ -174,6 +174,7 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot',
 
     total_downloads = 0
     total_skipped = 0
+    total_failed = 0
     media_exts = ('.jpg', '.jpeg', '.png', '.gif', '.mp4', '.gifv', '.webp')
 
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
@@ -222,11 +223,14 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot',
                         total_skipped += 1
                     elif result:
                         total_downloads += 1
+                    else:
+                        total_failed += 1
                 except Exception as e:
                     print(f"Task error: {e}")
+                    total_failed += 1
                 pbar.update(1)
 
-    print(f"\nDone. {total_downloads} downloaded, {total_skipped} skipped (already existed).")
+    print(f"\nDone. {total_downloads} downloaded, {total_skipped} skipped (already existed), {total_failed} failed.")
 
 
 def print_title():
@@ -300,8 +304,10 @@ def main():
     flair = None
     if flairs:
         print("\nAvailable flairs:")
-        for i, f in enumerate(flairs, 1):
-            print(f"  {i}. {f}")
+        # Renamed loop variable from `f` to `flair_name` to avoid shadowing
+        # the built-in `f` string prefix / open() return value.
+        for i, flair_name in enumerate(flairs, 1):
+            print(f"  {i}. {flair_name}")
         fc = input("Filter by flair number (leave blank for all): ").strip()
         if fc.isdigit() and 1 <= int(fc) <= len(flairs):
             flair = flairs[int(fc) - 1]
