@@ -1,39 +1,47 @@
 # RedditDownloaderV2
 
-A powerful Python-based Reddit media downloader that fetches images and videos from any subreddit of your choice using the official Reddit API.
+A powerful Python-based Reddit media downloader that fetches images, videos, and text posts from any subreddit using Reddit's public JSON API (no API key required).
 
-## Features
+## What it does
 
-- Download images and videos from subreddits
-- Supports hot, new, top, and rising sorting
-- Automatic handling of NSFW content (with toggle)
-- Progress tracking and error handling
-- Saves files with clean naming (including post title and ID)
-- Configurable download limits and filters
+Downloads media (images, videos, GIFs) and/or text posts from subreddits in bulk, with support for flair filtering, concurrent downloads, and organized folder output.
 
-## Requirements
+## Key Technical Features
 
-- Python 3.8+
-- Reddit API credentials (free)
+- Uses Reddit's **public JSON API** (`/hot.json`) — no credentials or API key needed
+- Multi-threaded downloading with `ThreadPoolExecutor`
+- Automatic rate-limit handling (waits 60s on 429)
+- Flair filtering (scans first 100 posts to list available flairs)
+- Smart media detection (jpg, jpeg, png, gif, mp4, gifv, webp + Reddit video fallback)
+- Separate folders for Media and Text downloads
+- Subreddit search with interactive selection
+
+## File Structure
+
+```
+RedditDownloaderV2/
+├── main.py              # Full application logic (entry point)
+├── requirements.txt
+├── .env.example         # (optional) for future authenticated features
+├── config.py            # Default settings (download limit, NSFW, output dir)
+└── LICENSE
+```
+
+## Main Functions (main.py)
+
+- `fetch_posts()` — Paginates through Reddit hot posts using `after` token
+- `scrape_reddit()` — Orchestrates downloads with thread pool
+- `download_file()` — Streams large files in chunks
+- `get_available_flairs()` — Scans subreddit for flair options
+- `search_subreddits()` — Searches Reddit for matching subreddits
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/drew-codes-things/RedditDownloaderV2.git
-   cd RedditDownloaderV2
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Set up your Reddit API credentials:
-   - Go to https://www.reddit.com/prefs/apps
-   - Create a new "script" app
-   - Copy your `client_id`, `client_secret`, and `user_agent`
-   - Create a `.env` file (see `.env.example`)
+```bash
+git clone https://github.com/drew-codes-things/RedditDownloaderV2.git
+cd RedditDownloaderV2
+pip install -r requirements.txt
+```
 
 ## Usage
 
@@ -41,20 +49,26 @@ A powerful Python-based Reddit media downloader that fetches images and videos f
 python main.py
 ```
 
-Follow the prompts to choose a subreddit, sorting method, and number of posts to download.
+The script will:
+1. Ask you to search for a subreddit
+2. Let you pick from top results
+3. Choose Media / Text / Both
+4. Set download count and concurrency level
+5. Optionally filter by flair
 
-## Configuration
+## Technical Details
 
-Edit `config.py` or use environment variables for:
-- Default subreddit
-- Download limit
-- NSFW filter
-- Output directory
+- **No authentication required** — uses public unauthenticated endpoints
+- **Headers**: Custom User-Agent (`RedditDownloader/2.0 by Drew`)
+- **Concurrency**: User-defined thread count
+- **Output**: `Reddit_downloads/Media/` and `Reddit_downloads/Text/`
+- **Error handling**: Graceful failures per file with logging
+
+## Requirements
+
+- Python 3.8+
+- Internet connection
 
 ## License
 
 MIT License
-
----
-
-*Originally created to make bulk downloading from Reddit simple and reliable.*
