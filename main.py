@@ -3,11 +3,13 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+from urllib.parse import quote, urlparse
 
 HEADERS = {'User-Agent': 'RedditDownloader/2.0 by Drew'}
 MAX_THREADS = 10
 RETRY_ATTEMPTS = 4
 RETRY_BACKOFF_SECONDS = 1.0
+REDDIT_JSON_BASES = ("https://www.reddit.com", "https://old.reddit.com")
 
 
 def request_with_retry(url, *, stream=False, timeout=15, headers=None, retries=RETRY_ATTEMPTS):
@@ -45,6 +47,52 @@ def request_with_retry(url, *, stream=False, timeout=15, headers=None, retries=R
     if last_error:
         raise last_error
     raise requests.RequestException(f"Request failed for {url}")
+
+
+def normalize_subreddit_name(value):
+    """Normalise user subreddit input: URL, r/name, or plain name -> name."""
+    if not value:
+        return ""
+    raw = value.strip()
+    if not raw:
+        return ""
+    if raw.startswith("http://") or raw.startswith("https://"):
+        path = urlparse(raw).path.strip("/")
+        if path.lower().startswith("r/"):
+            parts = path.split("/")
+            if len(parts) >= 2:
+                return parts[1]
+        return path.split("/")[0] if path else ""
+    if raw.lower().startswith("r/"):
+        return raw[2:]
+    return raw
+
+
+def reddit_json_get(path, *, query=None, timeout=15):
+    """
+    Fetch Reddit JSON with host fallback.
+    Tries www first, then old.reddit for environments where one host is blocked.
+    """
+    last_error = None
+    query = query or ""
+    for base in REDDIT_JSON_BASES:
+        url = f"{base}{path}"
+        if query:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}{query}"
+        try:
+            resp = request_with_retry(url, headers=HEADERS, timeout=timeout)
+            if resp.status_code == 403:
+                last_error = requests.RequestException(f"403 Blocked from {base}")
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as e:
+            last_error = e
+            continue
+    if last_error:
+        raise last_error
+    raise requests.RequestException(f"Unable to fetch Reddit JSON for {path}")
 
 
 def get_downloads_folder(content_type):
@@ -116,20 +164,19 @@ def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
     if sort not in valid_sorts:
         sort = 'hot'
 
+    subreddit_name = normalize_subreddit_name(subreddit_name)
     posts = []
     after = None
     fetched = 0
 
     while fetched < limit:
         batch = min(100, limit - fetched)
-        url = f"https://www.reddit.com/r/{subreddit_name}/{sort}.json?limit={batch}"
-        if after:
-            url += f"&after={after}"
-
         try:
-            resp = request_with_retry(url, headers=HEADERS, timeout=15)
-            resp.raise_for_status()
-            data = resp.json().get('data', {})
+            query = f"limit={batch}&include_over_18=on"
+            if after:
+                query += f"&after={after}"
+            listing = reddit_json_get(f"/r/{quote(subreddit_name)}/{sort}.json", query=query, timeout=15)
+            data = listing.get('data', {})
             children = data.get('children', [])
             if not children:
                 break
@@ -154,16 +201,78 @@ def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
 
 
 def search_subreddits(query):
-    """Search subreddits using the public JSON API."""
-    url = f"https://www.reddit.com/subreddits/search.json?q={requests.utils.quote(query)}&limit=10"
+    """
+    Discover subreddits without /subreddits/search.json (frequently 403-blocked).
+    Uses:
+      1) exact probe via /r/<name>.json
+      2) client-side filtering over public subreddit listing feeds
+    """
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    matches = {}
+
+    exact_name = normalize_subreddit_name(query)
+    if exact_name:
+        try:
+            listing = reddit_json_get(f"/r/{quote(exact_name)}.json", query="limit=1", timeout=15)
+            children = listing.get('data', {}).get('children', [])
+            if children:
+                post = children[0].get('data', {})
+                sr_name = post.get('subreddit') or exact_name
+                matches[sr_name.lower()] = {
+                    'display_name': sr_name,
+                    'title': post.get('subreddit_name_prefixed', f"r/{sr_name}"),
+                    'public_description': '',
+                    'subscribers': post.get('subreddit_subscribers', 0),
+                }
+        except requests.RequestException:
+            pass
+
     try:
-        resp = request_with_retry(url, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-        children = resp.json().get('data', {}).get('children', [])
-        return [c['data'] for c in children]
+        for feed in ("popular", "new", "default"):
+            after = None
+            for _ in range(2):
+                query_str = "limit=100"
+                if after:
+                    query_str += f"&after={after}"
+                listing = reddit_json_get(f"/subreddits/{feed}.json", query=query_str, timeout=15)
+                data = listing.get('data', {})
+                children = data.get('children', [])
+                for child in children:
+                    sub = child.get('data', {})
+                    name = sub.get('display_name') or sub.get('subreddit')
+                    if not name:
+                        continue
+                    title = sub.get('title', '')
+                    desc = sub.get('public_description', '')
+                    haystack = f"{name} {title} {desc}".lower()
+                    if q not in haystack:
+                        continue
+                    key = name.lower()
+                    if key not in matches:
+                        matches[key] = {
+                            'display_name': name,
+                            'title': title,
+                            'public_description': desc,
+                            'subscribers': sub.get('subscribers', 0),
+                        }
+                after = data.get('after')
+                if not after:
+                    break
     except requests.RequestException as e:
         print(f"Error searching subreddits: {e}")
-        return []
+        return list(matches.values())[:10]
+
+    ranked = sorted(
+        matches.values(),
+        key=lambda s: (
+            not s['display_name'].lower().startswith(q),
+            -(s.get('subscribers') or 0),
+            s['display_name'].lower()
+        )
+    )
+    return ranked[:10]
 
 
 def get_available_flairs(subreddit_name, scan_limit):
