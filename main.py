@@ -6,6 +6,45 @@ from tqdm import tqdm
 
 HEADERS = {'User-Agent': 'RedditDownloader/2.0 by Drew'}
 MAX_THREADS = 10
+RETRY_ATTEMPTS = 4
+RETRY_BACKOFF_SECONDS = 1.0
+
+
+def request_with_retry(url, *, stream=False, timeout=15, headers=None, retries=RETRY_ATTEMPTS):
+    """
+    Perform a GET request with small exponential backoff.
+
+    Retries transient network failures, HTTP 429, and 5xx responses.
+    """
+    headers = headers or HEADERS
+    last_error = None
+
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, stream=stream, headers=headers, timeout=timeout)
+            if resp.status_code == 429 and attempt < retries - 1:
+                retry_after = int(resp.headers.get('Retry-After', 0) or 0)
+                wait = retry_after if retry_after > 0 else RETRY_BACKOFF_SECONDS * (2 ** attempt)
+                print(f"[RETRY] Rate limited for {url} -> waiting {wait:.1f}s ({attempt + 1}/{retries})")
+                time.sleep(wait)
+                continue
+            if 500 <= resp.status_code < 600 and attempt < retries - 1:
+                wait = RETRY_BACKOFF_SECONDS * (2 ** attempt)
+                print(f"[RETRY] HTTP {resp.status_code} for {url} -> waiting {wait:.1f}s ({attempt + 1}/{retries})")
+                time.sleep(wait)
+                continue
+            return resp
+        except requests.RequestException as e:
+            last_error = e
+            if attempt == retries - 1:
+                raise
+            wait = RETRY_BACKOFF_SECONDS * (2 ** attempt)
+            print(f"[RETRY] Network error for {url}: {e} -> waiting {wait:.1f}s ({attempt + 1}/{retries})")
+            time.sleep(wait)
+
+    if last_error:
+        raise last_error
+    raise requests.RequestException(f"Request failed for {url}")
 
 
 def get_downloads_folder(content_type):
@@ -28,7 +67,7 @@ def download_file(url, filename, download_folder):
         return 'skip'
 
     try:
-        response = requests.get(url, stream=True, headers=HEADERS, timeout=30)
+        response = request_with_retry(url, stream=True, headers=HEADERS, timeout=30)
         response.raise_for_status()
         with open(file_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -88,11 +127,7 @@ def fetch_posts(subreddit_name, limit, sort='hot', flair=None):
             url += f"&after={after}"
 
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=15)
-            if resp.status_code == 429:
-                print("Rate limited - waiting 60 seconds...")
-                time.sleep(60)
-                continue
+            resp = request_with_retry(url, headers=HEADERS, timeout=15)
             resp.raise_for_status()
             data = resp.json().get('data', {})
             children = data.get('children', [])
@@ -122,7 +157,7 @@ def search_subreddits(query):
     """Search subreddits using the public JSON API."""
     url = f"https://www.reddit.com/subreddits/search.json?q={requests.utils.quote(query)}&limit=10"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=15)
+        resp = request_with_retry(url, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         children = resp.json().get('data', {}).get('children', [])
         return [c['data'] for c in children]
