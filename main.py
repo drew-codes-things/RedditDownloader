@@ -190,7 +190,9 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot',
                         fname = f"{post['id']}_gallery_{idx:03d}{ext}"
                         futures.append(executor.submit(download_file, gurl, fname, folder))
                 else:
-                    # --- direct image ---
+                    scheduled_media_urls = set()
+
+                    # --- direct image/video ---
                     # Prefix filename with the post ID so that two different
                     # posts linking the same CDN filename (e.g. abc123.jpg on
                     # Imgur) don't silently overwrite each other.
@@ -202,13 +204,18 @@ def scrape_reddit(subreddit_name, count, num_threads, download_type, sort='hot',
                         filename = f"{post['id']}_{raw_name}"
                         folder = get_downloads_folder('Media')
                         futures.append(executor.submit(download_file, url, filename, folder))
+                        scheduled_media_urls.add(url.split('?')[0].rstrip('/'))
+
                     # --- reddit-hosted video ---
                     reddit_video = post.get('media') or {}
                     rv = (reddit_video.get('reddit_video') or {})
-                    if rv.get('fallback_url'):
-                        filename = f"{post['id']}.mp4"
-                        folder = get_downloads_folder('Media')
-                        futures.append(executor.submit(download_file, rv['fallback_url'], filename, folder))
+                    fallback_url = rv.get('fallback_url')
+                    if fallback_url:
+                        fallback_norm = fallback_url.split('?')[0].rstrip('/')
+                        if fallback_norm not in scheduled_media_urls:
+                            filename = f"{post['id']}.mp4"
+                            folder = get_downloads_folder('Media')
+                            futures.append(executor.submit(download_file, fallback_url, filename, folder))
 
             if download_type in ['text', 'both'] and post.get('selftext', '').strip():
                 filename = f"{post['id']}_text.txt"
