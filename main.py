@@ -1,5 +1,6 @@
 import requests
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -51,6 +52,14 @@ def request_with_retry(url, *, stream=False, timeout=15, headers=None, retries=R
 
 def normalize_subreddit_name(value):
     """Normalise user subreddit input: URL, r/name, or plain name -> name."""
+    def _clean_candidate(name):
+        if not name:
+            return ""
+        # Keep only the first path segment and strip optional .json suffix.
+        cleaned = name.strip().split("/")[0]
+        cleaned = re.sub(r"\.json$", "", cleaned, flags=re.I)
+        return cleaned
+
     if not value:
         return ""
     raw = value.strip()
@@ -61,11 +70,11 @@ def normalize_subreddit_name(value):
         if path.lower().startswith("r/"):
             parts = path.split("/")
             if len(parts) >= 2:
-                return parts[1]
-        return path.split("/")[0] if path else ""
+                return _clean_candidate(parts[1])
+        return _clean_candidate(path.split("/")[0] if path else "")
     if raw.lower().startswith("r/"):
-        return raw[2:]
-    return raw
+        return _clean_candidate(raw[2:])
+    return _clean_candidate(raw)
 
 
 def reddit_json_get(path, *, query=None, timeout=15):
